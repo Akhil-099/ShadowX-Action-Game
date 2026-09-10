@@ -17,6 +17,8 @@ import { useColors } from '@/hooks/useColors';
 type GameMode = 'menu' | 'play' | 'upgrades' | 'settings' | 'complete' | 'dead';
 type EnemyType = 'basic' | 'fast' | 'heavy' | 'ranged' | 'boss';
 type UpgradeKey = 'attack' | 'health' | 'speed' | 'dash' | 'blast';
+type ControlId = 'attack' | 'defend' | 'dash' | 'blast';
+type PointerKey = string;
 
 type Player = {
   x: number;
@@ -26,6 +28,7 @@ type Player = {
   energy: number;
   maxEnergy: number;
   invulnerableUntil: number;
+  defending: boolean;
 };
 
 type Enemy = {
@@ -175,6 +178,7 @@ function makePlayer(width: number, height: number, save: SaveData): Player {
     energy: 100,
     maxEnergy: 100,
     invulnerableUntil: 0,
+    defending: false,
   };
 }
 
@@ -251,6 +255,8 @@ function ActionButton({
   disabled,
   accent,
   testID,
+  onControlStart,
+  onControlEnd,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   label: string;
@@ -258,8 +264,12 @@ function ActionButton({
   disabled?: boolean;
   accent: string;
   testID: string;
+  onControlStart?: (pointerId: PointerKey) => void;
+  onControlEnd?: (pointerId: PointerKey) => void;
 }) {
   const lastTriggerAtRef = useRef(0);
+  const activePointerIdsRef = useRef<Set<PointerKey>>(new Set());
+  const pointerEventsSeenRef = useRef(false);
   const trigger = () => {
     if (disabled) return;
     const now = Date.now();
@@ -268,6 +278,17 @@ function ActionButton({
     if (now - lastTriggerAtRef.current < 140) return;
     lastTriggerAtRef.current = now;
     onPress();
+  };
+  const beginPointer = (pointerId: PointerKey) => {
+    if (disabled || activePointerIdsRef.current.has(pointerId)) return;
+    activePointerIdsRef.current.add(pointerId);
+    onControlStart?.(pointerId);
+    trigger();
+  };
+  const endPointer = (pointerId: PointerKey) => {
+    if (!activePointerIdsRef.current.has(pointerId)) return;
+    activePointerIdsRef.current.delete(pointerId);
+    onControlEnd?.(pointerId);
   };
 
   return (
@@ -278,11 +299,40 @@ function ActionButton({
       onPress={trigger}
       onPointerDown={(event) => {
         preventControlDefault(event);
-        trigger();
+        pointerEventsSeenRef.current = true;
+        captureControlPointer(event);
+        beginPointer(String(event.nativeEvent.pointerId));
+      }}
+      onPointerUp={(event) => {
+        preventControlDefault(event);
+        releaseControlPointer(event);
+        endPointer(String(event.nativeEvent.pointerId));
+      }}
+      onPointerCancel={(event) => {
+        preventControlDefault(event);
+        releaseControlPointer(event);
+        endPointer(String(event.nativeEvent.pointerId));
       }}
       onTouchStart={(event) => {
         preventControlDefault(event);
-        trigger();
+        if (pointerEventsSeenRef.current) return;
+        Array.from(event.nativeEvent.changedTouches).forEach((touch) => {
+          beginPointer(String(touch.identifier));
+        });
+      }}
+      onTouchEnd={(event) => {
+        preventControlDefault(event);
+        if (pointerEventsSeenRef.current) return;
+        Array.from(event.nativeEvent.changedTouches).forEach((touch) => {
+          endPointer(String(touch.identifier));
+        });
+      }}
+      onTouchCancel={(event) => {
+        preventControlDefault(event);
+        if (pointerEventsSeenRef.current) return;
+        Array.from(event.nativeEvent.changedTouches).forEach((touch) => {
+          endPointer(String(touch.identifier));
+        });
       }}
       disabled={disabled}
       style={({ pressed }) => [
@@ -332,6 +382,12 @@ export default function ShadowXScreen() {
   const completionLockRef = useRef(false);
   const joystickActiveRef = useRef(false);
   const joystickPointerIdRef = useRef<number | null>(null);
+  const activeControlPointersRef = useRef<Record<ControlId, Set<PointerKey>>>({
+    attack: new Set<PointerKey>(),
+    defend: new Set<PointerKey>(),
+    dash: new Set<PointerKey>(),
+    blast: new Set<PointerKey>(),
+  });
 
   useEffect(() => {
     saveRef.current = save;
@@ -361,6 +417,25 @@ export default function ShadowXScreen() {
     persistSave(updater(saveRef.current));
   };
 
+  const clearActiveControls = () => {
+    activeControlPointersRef.current.attack.clear();
+    activeControlPointersRef.current.defend.clear();
+    activeControlPointersRef.current.dash.clear();
+    activeControlPointersRef.current.blast.clear();
+    joystickActiveRef.current = false;
+    joystickPointerIdRef.current = null;
+    joystickRef.current = { x: 0, y: 0 };
+    setJoystickVisual({ x: 0, y: 0 });
+  };
+
+  const startControlPointer = (control: ControlId, pointerId: PointerKey) => {
+    activeControlPointersRef.current[control].add(pointerId);
+  };
+
+  const endControlPointer = (control: ControlId, pointerId: PointerKey) => {
+    activeControlPointersRef.current[control].delete(pointerId);
+  };
+
   const addFloat = (x: number, y: number, value: number, color: string) => {
     const item: DamageNumber = {
       id: newId('float'),
@@ -374,6 +449,7 @@ export default function ShadowXScreen() {
   };
 
   const startLevel = (nextLevel: number) => {
+    clearActiveControls();
     const nextPlayer = makePlayer(arenaWidth, arenaHeight, saveRef.current);
     const nextEnemies = spawnEnemies(nextLevel, arenaWidth, arenaHeight, saveRef.current, colors);
     runtimeRef.current = { player: nextPlayer, enemies: nextEnemies, floats: [], effect: null };
@@ -547,6 +623,7 @@ export default function ShadowXScreen() {
       p.energy = Math.min(p.maxEnergy, p.energy + dt * 13);
 
       let incomingDamage = 0;
+      p.defending = activeControlPointersRef.current.defend.size > 0;
       const updatedEnemies = runtime.enemies.map((enemy) => {
         const current = { ...enemy };
         const dx = p.x - current.x;
@@ -568,10 +645,15 @@ export default function ShadowXScreen() {
       });
 
       if (incomingDamage > 0 && now > p.invulnerableUntil) {
-        p.hp = Math.max(0, p.hp - incomingDamage);
+        const damageAfterGuard = p.defending ? Math.max(1, Math.ceil(incomingDamage * 0.35)) : incomingDamage;
+        p.hp = Math.max(0, p.hp - damageAfterGuard);
         p.invulnerableUntil = now + 180;
-        addFloat(p.x, p.y - 26, incomingDamage, colors.destructive);
+        addFloat(p.x, p.y - 26, damageAfterGuard, p.defending ? colors.success : colors.destructive);
         triggerHaptic('light');
+      }
+
+      if (activeControlPointersRef.current.attack.size > 0 && now >= attackCooldownRef.current) {
+        performAttack();
       }
 
       runtime.player = p;
@@ -627,6 +709,7 @@ export default function ShadowXScreen() {
   };
 
   const openMenu = () => {
+    clearActiveControls();
     setPaused(false);
     setMode('menu');
   };
@@ -892,11 +975,12 @@ export default function ShadowXScreen() {
                 left: player.x - 19,
                 top: player.y - 19,
                 backgroundColor: colors.shadow,
-                borderColor: colors.cyan,
+                borderColor: player.defending ? colors.success : colors.cyan,
                 opacity: player.invulnerableUntil > Date.now() ? 0.55 : 1,
               },
             ]}
           >
+            {player.defending ? <View style={[styles.defendRing, { borderColor: colors.success }]} /> : null}
             <View style={[styles.playerEye, { backgroundColor: colors.cyan, left: 10 }]} />
             <View style={[styles.playerEye, { backgroundColor: colors.violet, right: 10 }]} />
             <View style={[styles.sword, { backgroundColor: colors.cyan, shadowColor: colors.cyan }]} />
@@ -978,10 +1062,47 @@ export default function ShadowXScreen() {
             <Text style={styles.controlHint}>MOVE</Text>
           </View>
           <View style={styles.actionCluster}>
-            <ActionButton testID="attack-button" icon="sword-cross" label="STRIKE" onPress={performAttack} accent={colors.cyan} disabled={!isPlaying} />
+            <ActionButton
+              testID="attack-button"
+              icon="sword-cross"
+              label="STRIKE"
+              onPress={performAttack}
+              onControlStart={(pointerId) => startControlPointer('attack', pointerId)}
+              onControlEnd={(pointerId) => endControlPointer('attack', pointerId)}
+              accent={colors.cyan}
+              disabled={!isPlaying}
+            />
             <View style={styles.actionRow}>
-              <ActionButton testID="dash-button" icon="fast-forward" label={dashReady ? 'DASH' : 'WAIT'} onPress={performDash} accent={colors.violet} disabled={!isPlaying || !dashReady} />
-              <ActionButton testID="blast-button" icon="flare" label={blastReady ? 'BLAST' : `${Math.ceil(player.energy)}%`} onPress={performBlast} accent={colors.gold} disabled={!isPlaying || !blastReady} />
+              <ActionButton
+                testID="dash-button"
+                icon="fast-forward"
+                label={dashReady ? 'DASH' : 'WAIT'}
+                onPress={performDash}
+                onControlStart={(pointerId) => startControlPointer('dash', pointerId)}
+                onControlEnd={(pointerId) => endControlPointer('dash', pointerId)}
+                accent={colors.violet}
+                disabled={!isPlaying || !dashReady}
+              />
+              <ActionButton
+                testID="defend-button"
+                icon="shield-outline"
+                label="DEFEND"
+                onPress={() => undefined}
+                onControlStart={(pointerId) => startControlPointer('defend', pointerId)}
+                onControlEnd={(pointerId) => endControlPointer('defend', pointerId)}
+                accent={colors.success}
+                disabled={!isPlaying}
+              />
+              <ActionButton
+                testID="blast-button"
+                icon="flare"
+                label={blastReady ? 'BLAST' : `${Math.ceil(player.energy)}%`}
+                onPress={performBlast}
+                onControlStart={(pointerId) => startControlPointer('blast', pointerId)}
+                onControlEnd={(pointerId) => endControlPointer('blast', pointerId)}
+                accent={colors.gold}
+                disabled={!isPlaying || !blastReady}
+              />
             </View>
           </View>
           {flash ? <View pointerEvents="none" style={[styles.flashOverlay, { backgroundColor: colors.violet }]} /> : null}
@@ -1077,7 +1198,7 @@ const styles = StyleSheet.create({
   settingCopy: { flex: 1 },
   toggle: { width: 50, height: 30, borderRadius: 16, padding: 3, justifyContent: 'center' },
   toggleThumb: { width: 24, height: 24, borderRadius: 13 },
-  gameShell: { flex: 1 },
+  gameShell: { flex: 1, touchAction: 'none', userSelect: 'none' },
   hud: { minHeight: 72, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#080914' },
   hudLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   hudBrand: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1093,7 +1214,7 @@ const styles = StyleSheet.create({
   levelChip: { alignItems: 'center', paddingHorizontal: 8 },
   chipLabel: { color: '#8c94b8', fontSize: 7, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
   chipValue: { fontSize: 16, fontFamily: 'Inter_700Bold', marginTop: 1 },
-  arena: { position: 'relative', overflow: 'hidden', flex: 1 },
+  arena: { position: 'relative', overflow: 'hidden', flex: 1, touchAction: 'none', userSelect: 'none' },
   arenaGrid: { ...StyleSheet.absoluteFill, opacity: 0.38, borderWidth: 1, borderColor: '#1d2342', backgroundColor: 'transparent' },
   arenaGlow: { position: 'absolute', width: 320, height: 320, borderRadius: 200, left: '50%', top: '42%', marginLeft: -160, marginTop: -160, backgroundColor: '#13163a', opacity: 0.48 },
   enemy: { position: 'absolute', borderWidth: 1.5, shadowOpacity: 0.65, shadowRadius: 12, elevation: 6, alignItems: 'center', justifyContent: 'center' },
@@ -1102,6 +1223,7 @@ const styles = StyleSheet.create({
   enemyHealthTrack: { position: 'absolute', top: -9, height: 3, backgroundColor: '#191d34', borderRadius: 4, overflow: 'hidden' },
   enemyHealthFill: { height: '100%' },
   player: { position: 'absolute', width: 38, height: 38, borderRadius: 20, borderWidth: 1.5, shadowOpacity: 0.9, shadowRadius: 18, elevation: 8, alignItems: 'center', justifyContent: 'center' },
+  defendRing: { position: 'absolute', width: 54, height: 54, borderRadius: 28, borderWidth: 2, opacity: 0.75 },
   playerEye: { position: 'absolute', top: 13, width: 4, height: 4, borderRadius: 3 },
   sword: { position: 'absolute', width: 5, height: 27, right: -8, top: -7, transform: [{ rotate: '42deg' }], borderRadius: 5, shadowOpacity: 0.85, shadowRadius: 10 },
   slashEffect: { position: 'absolute', width: 68, height: 68, borderRadius: 40, borderWidth: 3, opacity: 0.8, transform: [{ rotate: '35deg' }] },
