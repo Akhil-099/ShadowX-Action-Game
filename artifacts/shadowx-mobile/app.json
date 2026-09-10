@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "ShadowX",
+    "slug": "shadowx-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "shadowx-mobile",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#080914",
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {},
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

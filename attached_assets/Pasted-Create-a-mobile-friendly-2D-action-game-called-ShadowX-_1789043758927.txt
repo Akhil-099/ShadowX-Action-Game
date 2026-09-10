@@ -1,0 +1,104 @@
+Create a mobile-friendly 2D action game called **ShadowX**.
+
+GAME CONCEPT:
+The player controls a mysterious shadow warrior named ShadowX. The goal is to defeat enemies, survive each level, collect coins, and become stronger.
+
+GAMEPLAY:
+
+* Make the game playable on mobile phones using touch controls.
+* Add a virtual joystick on the left side for movement.
+* Add attack, dash, and special ability buttons on the right side.
+* The player can move left, right, up, and down.
+* The player has health and energy bars.
+* Enemies should automatically approach and attack the player.
+* The player can attack enemies using a fast shadow sword.
+* Add a dash ability with a short cooldown.
+* Add a powerful special "Shadow Blast" ability.
+* Show damage numbers when enemies are hit.
+* Add simple attack and hit animations.
+
+LEVEL SYSTEM:
+
+* Start with Level 1.
+* Each level contains multiple enemies.
+* After defeating all enemies, show a "LEVEL COMPLETE" screen.
+* Allow the player to continue to the next level.
+* Gradually increase enemy health, damage, speed, and number.
+* Add a boss enemy every 5 levels.
+
+COINS AND UPGRADES:
+
+* Enemies drop coins when defeated.
+* Display the player's coin count.
+* Add an Upgrade menu.
+* Allow players to upgrade:
+
+  * Attack Damage
+  * Maximum Health
+  * Movement Speed
+  * Dash Cooldown
+  * Shadow Blast Damage
+
+CHARACTERS:
+Player:
+
+* Black/dark shadow-style character.
+* Glowing eyes.
+* Carries a glowing shadow sword.
+* Smooth movement and attack animations.
+
+Enemies:
+
+* Create several different enemy types.
+* Basic Shadow Enemy
+* Fast Shadow Enemy
+* Heavy Shadow Enemy
+* Ranged Shadow Enemy
+* Boss Shadow Enemy
+
+UI:
+Create a modern dark gaming interface.
+Main menu:
+
+* SHADOWX logo/title
+* PLAY button
+* UPGRADES button
+* SETTINGS button
+
+During gameplay show:
+
+* Health bar
+* Energy bar
+* Coins
+* Current level
+* Pause button
+
+After death:
+
+* "YOU DIED"
+* Restart button
+* Main Menu button
+
+VISUAL STYLE:
+
+* Dark futuristic/shadow theme.
+* Black and deep purple background.
+* Glowing blue/purple effects.
+* Smooth particle effects.
+* Clean mobile-game UI.
+* Add screen shake when powerful attacks hit.
+* Add background music and sound effects, with a settings option to mute them.
+
+TECHNICAL REQUIREMENTS:
+
+* Make the game responsive for mobile screens.
+* It should also work in a desktop browser for testing.
+* Use HTML, CSS and JavaScript unless another technology is more appropriate.
+* Keep the code organized into separate files/modules.
+* Make sure the game actually works rather than creating only a visual mockup.
+* Do not use copyrighted characters, images, music, or assets.
+* Use simple original shapes/CSS/JavaScript-generated graphics if external assets are unavailable.
+
+IMPORTANT:
+First create a fully playable Level 1 with movement, combat, enemies, health, coins, and a level-complete system. Then expand the remaining systems.
+Make the controls responsive and easy to use on a mobile touchscreen.

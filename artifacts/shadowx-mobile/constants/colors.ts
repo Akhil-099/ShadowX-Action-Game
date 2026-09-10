@@ -1,0 +1,67 @@
+/**
+ * ShadowX design tokens.
+ *
+ * The game uses a dark-first palette with readable semantic tokens so the
+ * arena, menus, and touch controls stay visually consistent.
+ */
+const colors = {
+  light: {
+    text: '#f3f6ff',
+    tint: '#6fe8ff',
+    background: '#080914',
+    foreground: '#f3f6ff',
+    card: '#12152a',
+    cardForeground: '#f3f6ff',
+    primary: '#6fe8ff',
+    primaryForeground: '#080914',
+    secondary: '#1a1d38',
+    secondaryForeground: '#dce3ff',
+    muted: '#191d34',
+    mutedForeground: '#8c94b8',
+    accent: '#a58bff',
+    accentForeground: '#ffffff',
+    destructive: '#ff5370',
+    destructiveForeground: '#ffffff',
+    border: '#2b3155',
+    input: '#242b4c',
+    shadow: '#03040b',
+    violet: '#a58bff',
+    cyan: '#6fe8ff',
+    gold: '#ffc857',
+    success: '#69e6a5',
+    arena: '#0d1022',
+    arenaGrid: '#1d2342',
+    surfaceStrong: '#171b35',
+  },
+  dark: {
+    text: '#f3f6ff',
+    tint: '#6fe8ff',
+    background: '#080914',
+    foreground: '#f3f6ff',
+    card: '#12152a',
+    cardForeground: '#f3f6ff',
+    primary: '#6fe8ff',
+    primaryForeground: '#080914',
+    secondary: '#1a1d38',
+    secondaryForeground: '#dce3ff',
+    muted: '#191d34',
+    mutedForeground: '#8c94b8',
+    accent: '#a58bff',
+    accentForeground: '#ffffff',
+    destructive: '#ff5370',
+    destructiveForeground: '#ffffff',
+    border: '#2b3155',
+    input: '#242b4c',
+    shadow: '#03040b',
+    violet: '#a58bff',
+    cyan: '#6fe8ff',
+    gold: '#ffc857',
+    success: '#69e6a5',
+    arena: '#0d1022',
+    arenaGrid: '#1d2342',
+    surfaceStrong: '#171b35',
+  },
+  radius: 16,
+};
+
+export default colors;
