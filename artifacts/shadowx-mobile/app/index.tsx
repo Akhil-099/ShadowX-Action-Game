@@ -2,9 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
@@ -143,6 +142,29 @@ function triggerHaptic(kind: 'light' | 'medium' | 'heavy' = 'light') {
   void Haptics.impactAsync(style);
 }
 
+function preventControlDefault(event: unknown) {
+  const browserEvent = event as { preventDefault?: () => void };
+  browserEvent.preventDefault?.();
+}
+
+function captureControlPointer(event: unknown) {
+  const currentEvent = event as {
+    currentTarget?: { setPointerCapture?: (pointerId: number) => void };
+    nativeEvent?: { pointerId?: number };
+  };
+  const pointerId = currentEvent.nativeEvent?.pointerId;
+  if (pointerId !== undefined) currentEvent.currentTarget?.setPointerCapture?.(pointerId);
+}
+
+function releaseControlPointer(event: unknown) {
+  const currentEvent = event as {
+    currentTarget?: { releasePointerCapture?: (pointerId: number) => void };
+    nativeEvent?: { pointerId?: number };
+  };
+  const pointerId = currentEvent.nativeEvent?.pointerId;
+  if (pointerId !== undefined) currentEvent.currentTarget?.releasePointerCapture?.(pointerId);
+}
+
 function makePlayer(width: number, height: number, save: SaveData): Player {
   const maxHp = 100 + save.health * 20;
   return {
@@ -237,12 +259,31 @@ function ActionButton({
   accent: string;
   testID: string;
 }) {
+  const lastTriggerAtRef = useRef(0);
+  const trigger = () => {
+    if (disabled) return;
+    const now = Date.now();
+    // A touch can emit pointerdown, touchstart, and Pressable onPress together.
+    // Trigger once so a single tap never becomes two attacks or dashes.
+    if (now - lastTriggerAtRef.current < 140) return;
+    lastTriggerAtRef.current = now;
+    onPress();
+  };
+
   return (
     <Pressable
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
-      onPress={onPress}
+      onPress={trigger}
+      onPointerDown={(event) => {
+        preventControlDefault(event);
+        trigger();
+      }}
+      onTouchStart={(event) => {
+        preventControlDefault(event);
+        trigger();
+      }}
       disabled={disabled}
       style={({ pressed }) => [
         styles.actionButton,
@@ -272,6 +313,7 @@ export default function ShadowXScreen() {
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState(1);
   const [flash, setFlash] = useState(false);
+  const [joystickVisual, setJoystickVisual] = useState({ x: 0, y: 0 });
 
   const saveRef = useRef(save);
   const runtimeRef = useRef<Runtime>({
@@ -288,6 +330,8 @@ export default function ShadowXScreen() {
   const dashCooldownRef = useRef(0);
   const lastTickRef = useRef(Date.now());
   const completionLockRef = useRef(false);
+  const joystickActiveRef = useRef(false);
+  const joystickPointerIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     saveRef.current = save;
@@ -547,35 +591,40 @@ export default function ShadowXScreen() {
     return () => clearInterval(interval);
   }, [arenaHeight, arenaWidth, colors, mode, paused]);
 
-  const joystickResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (event) => {
-          joystickOriginRef.current = {
-            x: event.nativeEvent.pageX,
-            y: event.nativeEvent.pageY,
-          };
-        },
-        onPanResponderMove: (event) => {
-          const dx = event.nativeEvent.pageX - joystickOriginRef.current.x;
-          const dy = event.nativeEvent.pageY - joystickOriginRef.current.y;
-          const magnitude = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-          joystickRef.current = {
-            x: clamp(dx / Math.max(54, magnitude), -1, 1),
-            y: clamp(dy / Math.max(54, magnitude), -1, 1),
-          };
-        },
-        onPanResponderRelease: () => {
-          joystickRef.current = { x: 0, y: 0 };
-        },
-        onPanResponderTerminate: () => {
-          joystickRef.current = { x: 0, y: 0 };
-        },
-      }),
-    [],
-  );
+  const beginJoystick = (pageX: number, pageY: number, pointerId: number | null = null) => {
+    if (joystickActiveRef.current) return;
+    joystickActiveRef.current = true;
+    joystickPointerIdRef.current = pointerId;
+    joystickOriginRef.current = { x: pageX, y: pageY };
+    joystickRef.current = { x: 0, y: 0 };
+    setJoystickVisual({ x: 0, y: 0 });
+  };
+
+  const moveJoystick = (pageX: number, pageY: number, pointerId: number | null = null) => {
+    if (!joystickActiveRef.current) return;
+    if (joystickPointerIdRef.current !== null && pointerId !== null && joystickPointerIdRef.current !== pointerId) return;
+    const dx = pageX - joystickOriginRef.current.x;
+    const dy = pageY - joystickOriginRef.current.y;
+    const magnitude = Math.sqrt(dx * dx + dy * dy);
+    const maxDistance = 54;
+    const limitedDistance = Math.min(maxDistance, magnitude);
+    const angle = Math.atan2(dy, dx);
+    const nextVector = magnitude < 2
+      ? { x: 0, y: 0 }
+      : {
+          x: Math.cos(angle) * (limitedDistance / maxDistance),
+          y: Math.sin(angle) * (limitedDistance / maxDistance),
+        };
+    joystickRef.current = nextVector;
+    setJoystickVisual(nextVector);
+  };
+
+  const endJoystick = () => {
+    joystickActiveRef.current = false;
+    joystickPointerIdRef.current = null;
+    joystickRef.current = { x: 0, y: 0 };
+    setJoystickVisual({ x: 0, y: 0 });
+  };
 
   const openMenu = () => {
     setPaused(false);
@@ -874,9 +923,57 @@ export default function ShadowXScreen() {
             <Text style={styles.enemyCounterLabel}>THREATS REMAINING</Text>
             <Text style={[styles.enemyCounterValue, { color: colors.foreground }]}>{enemies.length.toString().padStart(2, '0')}</Text>
           </View>
-          <View style={styles.joystickZone} {...joystickResponder.panHandlers}>
+          <View
+            style={styles.joystickZone}
+            onPointerDown={(event) => {
+              preventControlDefault(event);
+              captureControlPointer(event);
+              beginJoystick(event.nativeEvent.pageX, event.nativeEvent.pageY, event.nativeEvent.pointerId);
+            }}
+            onPointerMove={(event) => {
+              preventControlDefault(event);
+              moveJoystick(event.nativeEvent.pageX, event.nativeEvent.pageY, event.nativeEvent.pointerId);
+            }}
+            onPointerUp={(event) => {
+              preventControlDefault(event);
+              releaseControlPointer(event);
+              endJoystick();
+            }}
+            onPointerCancel={(event) => {
+              preventControlDefault(event);
+              releaseControlPointer(event);
+              endJoystick();
+            }}
+            onTouchStart={(event) => {
+              preventControlDefault(event);
+              const touch = event.nativeEvent.touches[0];
+              if (touch) beginJoystick(touch.pageX, touch.pageY);
+            }}
+            onTouchMove={(event) => {
+              preventControlDefault(event);
+              const touch = event.nativeEvent.touches[0] ?? event.nativeEvent.changedTouches[0];
+              if (touch) moveJoystick(touch.pageX, touch.pageY);
+            }}
+            onTouchEnd={(event) => {
+              preventControlDefault(event);
+              endJoystick();
+            }}
+            onTouchCancel={(event) => {
+              preventControlDefault(event);
+              endJoystick();
+            }}
+          >
             <View style={[styles.joystickBase, { borderColor: colors.border, backgroundColor: colors.muted }]}>
-              <View style={[styles.joystickKnob, { backgroundColor: colors.cyan, shadowColor: colors.cyan }]} />
+              <View
+                style={[
+                  styles.joystickKnob,
+                  {
+                    backgroundColor: colors.cyan,
+                    shadowColor: colors.cyan,
+                    transform: [{ translateX: joystickVisual.x * 34 }, { translateY: joystickVisual.y * 34 }],
+                  },
+                ]}
+              />
             </View>
             <Text style={styles.controlHint}>MOVE</Text>
           </View>
@@ -1013,13 +1110,13 @@ const styles = StyleSheet.create({
   enemyCounter: { position: 'absolute', top: 14, left: 14 },
   enemyCounterLabel: { color: '#8c94b8', fontSize: 8, fontFamily: 'Inter_700Bold', letterSpacing: 1.2 },
   enemyCounterValue: { fontSize: 20, fontFamily: 'Inter_700Bold', marginTop: 2 },
-  joystickZone: { position: 'absolute', left: 18, bottom: 18, width: 126, height: 126, alignItems: 'center', justifyContent: 'center' },
-  joystickBase: { width: 92, height: 92, borderRadius: 50, borderWidth: 1, backgroundColor: '#191d34', opacity: 0.88, alignItems: 'center', justifyContent: 'center' },
+  joystickZone: { position: 'absolute', left: 12, bottom: 12, width: 146, height: 146, alignItems: 'center', justifyContent: 'center', touchAction: 'none', userSelect: 'none' },
+  joystickBase: { width: 106, height: 106, borderRadius: 54, borderWidth: 1, backgroundColor: '#191d34', opacity: 0.88, alignItems: 'center', justifyContent: 'center' },
   joystickKnob: { width: 45, height: 45, borderRadius: 24, shadowOpacity: 0.85, shadowRadius: 14, elevation: 7 },
   controlHint: { position: 'absolute', bottom: -3, color: '#8c94b8', fontSize: 8, fontFamily: 'Inter_700Bold', letterSpacing: 2 },
-  actionCluster: { position: 'absolute', right: 12, bottom: 18, alignItems: 'flex-end', gap: 8 },
-  actionRow: { flexDirection: 'row', gap: 8 },
-  actionButton: { width: 78, height: 62, borderRadius: 16, borderWidth: 1, backgroundColor: '#12152a', alignItems: 'center', justifyContent: 'center', gap: 2 },
+  actionCluster: { position: 'absolute', right: 10, bottom: 12, alignItems: 'flex-end', gap: 10 },
+  actionRow: { flexDirection: 'row', gap: 10 },
+  actionButton: { width: 88, height: 72, borderRadius: 17, borderWidth: 1, backgroundColor: '#12152a', alignItems: 'center', justifyContent: 'center', gap: 3, touchAction: 'none', userSelect: 'none' },
   actionLabel: { fontSize: 8, fontFamily: 'Inter_700Bold', letterSpacing: 0.8 },
   flashOverlay: { ...StyleSheet.absoluteFill, opacity: 0.12 },
   overlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8, 9, 20, 0.9)', alignItems: 'center', justifyContent: 'center', padding: 28 },
